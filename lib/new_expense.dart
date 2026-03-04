@@ -1,222 +1,324 @@
+import 'dart:io';
 
-//overlay section for adding new expenses
-import 'dart:io';   //to check for platform
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:expense_tracker/models/expense.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 
-class NewExpense extends StatefulWidget{
-  const NewExpense({super.key});
+import 'package:expense_tracker/data/expense_repository.dart';
+import 'package:expense_tracker/models/expense.dart';
+
+class NewExpense extends StatefulWidget {
+  const NewExpense({
+    super.key,
+    required this.repository,
+  });
+
+  final ExpenseRepository repository;
 
   @override
-  State<NewExpense> createState() {
-    return _NewExpenseState();
-  }
-
+  State<NewExpense> createState() => _NewExpenseState();
 }
 
-class _NewExpenseState extends State<NewExpense>{
-  final _titlecontroller=TextEditingController(); //helps us take in text input,read any changes in text input etc
-  final _amountcontroller=TextEditingController();
-  DateTime? _selectedDate;  //initially set to null which is why '?' sign is used
-  Category _selectedcategory=Category.leisure;
-  var _isSending=false;
+class _NewExpenseState extends State<NewExpense> {
+  final _titleController = TextEditingController();
+  final _amountController = TextEditingController();
+  final _dateController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
 
-  void _presentdatepicker() async{   //used to manage date from calendar icon
-    final now=DateTime.now();
-    final _pickdate=await showDatePicker(context: context,
-        initialDate: DateTime.now(),
-        firstDate: DateTime(now.year-1,now.month,now.day),   //creates a DateTime Object for 1 year before the current date
-        lastDate: DateTime.now()
+  DateTime? _selectedDate;
+  Category _selectedCategory = Category.leisure;
+  var _isSending = false;
+
+  Future<void> _presentDatePicker() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: DateTime(now.year - 1, now.month, now.day),
+      lastDate: now,
     );
-    setState(() {
-        _selectedDate=_pickdate;
-    });
+    if (picked != null) {
+      setState(() {
+        _selectedDate = picked;
+        _dateController.text = formatter.format(picked);
+      });
+    }
   }
 
-  void dispose(){//it is always essenial to dispose of the controller when it is no longer needed also dispose() can only be used in stateful widget
-    _titlecontroller.dispose();
-    _amountcontroller.dispose();
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _amountController.dispose();
+    _dateController.dispose();
     super.dispose();
   }
 
-  void _showDialog(){
-    if(Platform.isIOS) {   //error popup for ios(optional, we can use the same popup for both ios and android)
-      showCupertinoDialog(context: context, builder: (ctx) =>
-          CupertinoAlertDialog( //error dialog for ios devices
-            content: Text(
-                'Please make sure a valid title,amount,date and category was entered'),
-            actions: [
-              TextButton(onPressed: () {
-                Navigator.pop(ctx);
-              },
-                  child: Text('Okay')
-              )
-            ],
-          ));
+  void _showInvalidInputDialog() {
+    if (Platform.isIOS) {
+      showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          content: const Text(
+            'Please enter a valid title, amount, and date.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Invalid input'),
+          content: const Text(
+            'Please enter a valid title, amount, and date.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
     }
-    else {
-      showDialog(context: context, builder: (ctx) =>
-          AlertDialog(
-            title: Text('Invalid Input'),
-            content: Text(
-                'Please make sure a valid title,amount,date and category was entered'),
-            actions: [
-              TextButton(onPressed: () {
-                Navigator.pop(ctx);
-              },
-                  child: Text('Okay')
-              )
-            ],
-          ),);
-    }//it is like a popup
   }
 
-  Future<void> _submitExpenseData() async{
-    final enteredAmount=double.tryParse(_amountcontroller.text);  //tryparse('hello')=>null or tryparse('123')=>123
-    final amountIsInvalid=enteredAmount==null || enteredAmount<=0;
-    if(_titlecontroller.text.trim().isEmpty || amountIsInvalid || _selectedDate==null) { //.trim is used to remove and leading or trailing spaces
-    _showDialog();
-    return;
+  Future<void> _submitExpenseData() async {
+    final amount = double.tryParse(_amountController.text);
+    final amountInvalid = amount == null || amount <= 0;
+    if (_titleController.text.trim().isEmpty ||
+        amountInvalid ||
+        _selectedDate == null) {
+      _showInvalidInputDialog();
+      return;
     }
 
-  try {
-    setState(() {
-      _isSending=true;
-    });
-    final url = Uri.https(
-      '',      //add the url to firebase
-      'expense-tracker.json',
-    );
-    final response = await http.post(url, headers: {
-      'Content-Type': 'application/json'
-    }, body: json.encode({
-      'title': _titlecontroller.text,
-      'amount': enteredAmount,
-      'date': _selectedDate!.toIso8601String(),
-      'category': _selectedcategory.name,
-    }));
-    final Map<String, dynamic> expenseData = json.decode(response.body);
-    // widget.addExpense(Expense(
-    //     id: expenseData['name'],
-    //     title: _titlecontroller.text,
-    //     amount: enteredAmount,
-    //     date: _selectedDate!,
-    //     category: _selectedcategory
-    // ));
-    final created = Expense(
-      id: expenseData['name'],
-      title: _titlecontroller.text.trim(),
-      amount: enteredAmount,
-      date: _selectedDate!,
-      category: _selectedcategory,
-    );
+    try {
+      setState(() => _isSending = true);
 
-    if (!mounted) return;
+      final created = await widget.repository.createExpense(
+        title: _titleController.text,
+        amount: amount,
+        date: _selectedDate!,
+        category: _selectedCategory,
+      );
 
-    Navigator.pop(context,created); //removes the overlay
+      if (!mounted) return;
+      Navigator.pop(context, created);
+    } catch (_) {
+      _showInvalidInputDialog();
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
   }
-
-    //else condition
-
-    catch(error){
-
-    _showDialog();
-  }
-
-  }
-
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final keyboardSpace = MediaQuery.of(context).viewInsets.bottom;
 
-    final keyboardSpace=MediaQuery.of(context).viewInsets.bottom;   //viewInsets is used to check the amount of ui space which is getting overlapped from the bottom  (here to check ui eleemnts getting overlapped by the keyboard)
+    final inputBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.5)),
+    );
 
-    return SizedBox(
-      height: double.infinity,
-      child: SingleChildScrollView(      //this makes it scrollable and helps in situation such as landscape mode
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(16,48,16,keyboardSpace+16),
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 16,
+        bottom: keyboardSpace + 24,
+      ),
+      child: SingleChildScrollView(
+        child: Form(
+          key: _formKey,
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(
-                controller: _titlecontroller,
-                maxLength: 50,
-                decoration: const InputDecoration(
-                  label: Text('Title'),
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: colorScheme.onSurfaceVariant.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
+              Text(
+                'Add expense',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Section: Details
+              Text(
+                'Details',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _titleController,
+                maxLength: 50,
+                decoration: InputDecoration(
+                  labelText: 'Title',
+                  hintText: 'e.g. Groceries, Movie ticket',
+                  border: inputBorder,
+                  enabledBorder: inputBorder,
+                  focusedBorder: inputBorder.copyWith(
+                    borderSide: BorderSide(color: colorScheme.primary, width: 2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Section: Amount & date
+              Text(
+                'Amount & date',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: TextField(
-                      controller: _amountcontroller,
-                      maxLength: 5,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
+                    flex: 2,
+                    child: TextFormField(
+                      controller: _amountController,
+                      maxLength: 10,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: InputDecoration(
                         prefixText: 'Rs ',
-                        label: Text('Amount'),
+                        labelText: 'Amount',
+                        border: inputBorder,
+                        enabledBorder: inputBorder,
+                        focusedBorder: inputBorder.copyWith(
+                          borderSide: BorderSide(
+                            color: colorScheme.primary,
+                            width: 2,
+                          ),
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
-                  child:Row(
-                    mainAxisAlignment: MainAxisAlignment.end, //pushing the contents(icon and text) of the row to the end
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Text(_selectedDate==null?'No date selected':formatter.format(_selectedDate!)),    //formatter.format is imported from expense.dart/model.dart it is used to display date in readable fashion
-                      IconButton(onPressed: _presentdatepicker, icon: const Icon(Icons.calendar_month)),
-                    ],
-                  )
-                  )
-
+                    flex: 2,
+                    child: TextFormField(
+                      readOnly: true,
+                      onTap: _isSending ? null : _presentDatePicker,
+                      controller: _dateController,
+                      decoration: InputDecoration(
+                        labelText: 'Date',
+                        hintText: 'Pick date',
+                        border: inputBorder,
+                        enabledBorder: inputBorder,
+                        focusedBorder: inputBorder.copyWith(
+                          borderSide: BorderSide(
+                            color: colorScheme.primary,
+                            width: 2,
+                          ),
+                        ),
+                        suffixIcon: const Icon(Icons.calendar_month_rounded),
+                      ),
+                    ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
+
+              // Section: Category
+              Text(
+                'Category',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: Category.values.map((category) {
+                  final isSelected = _selectedCategory == category;
+                  return FilterChip(
+                    selected: isSelected,
+                    label: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          categoryicons[category],
+                          size: 18,
+                          color: isSelected
+                              ? colorScheme.onPrimaryContainer
+                              : colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(category.name[0].toUpperCase() +
+                            category.name.substring(1)),
+                      ],
+                    ),
+                    onSelected: _isSending
+                        ? null
+                        : (selected) {
+                            if (selected) {
+                              setState(() => _selectedCategory = category);
+                            }
+                          },
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 28),
+
+              // Actions
               Row(
                 children: [
-                  DropdownButton(              //three paramters here:value,items,onChanged
-                      value: _selectedcategory,  //shows currently selected item in the dropdown
-                      items: Category.values.map(   //values access each value of the enum category(food,travel,leisure,work)
-                          (category)=>DropdownMenuItem(
-                            value: category,
-                            child:Text(category.name.toUpperCase()),
-                          ),
-                      ).toList(),   //displays each category as a dropdown item
-
-                      onChanged: (value){
-                        if(value==null){  //iff value is not selected then skips the function(return)
-                          return;
-                        }
-                        setState(() {
-                          _selectedcategory=value;
-                        });
-                      }),
-                  const Spacer(),   //flexible sized gap. SizedBox is a fixed size gap
-                  TextButton(onPressed: _isSending?null: (){
-                    Navigator.pop(context);   //removes the overlay
-                  },
-                      child: _isSending?SizedBox(width:16 ,height:16 ,child:CircularProgressIndicator()):Text('Cancel')
+                  TextButton(
+                    onPressed: _isSending
+                        ? null
+                        : () => Navigator.pop(context),
+                    child: const Text('Cancel'),
                   ),
-
-
-                 ElevatedButton(onPressed:_isSending?null:_submitExpenseData,
-                     child:Text('Save Expense')
-                 )
-              ]
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _isSending ? null : _submitExpenseData,
+                      icon: _isSending
+                          ? SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: colorScheme.onPrimary,
+                              ),
+                            )
+                          : const Icon(Icons.check_rounded, size: 20),
+                      label: Text(_isSending ? 'Saving…' : 'Save expense'),
+                    ),
+                  ),
+                ],
               ),
-
-
-
-
-            ]
-          )
+            ],
+          ),
         ),
       ),
     );
   }
-  }
-
+}

@@ -12,14 +12,13 @@ const categoryicons={  //like a map (key:value) pairs used for icon selection
 };
 
 class Expense{
-  Expense(
-  {required this.title,
-  required this.amount,
-  required this.date,
-  required this.category,
-    required this.id
-   })  ;    //:id=uuid.v4(); attaching this will give automatic uid
-
+  Expense({
+    required this.title,
+    required this.amount,
+    required this.date,
+    required this.category,
+    required this.id,
+  });
 
   final String title;
   final double amount;
@@ -27,8 +26,46 @@ class Expense{
   final String id;
   final Category category;
 
-  String get formattedDate{  //get method is used for functions which dont take any input but return a value
-      return formatter.format(date);
+  String get formattedDate{
+    return formatter.format(date);
+  }
+
+  Expense copyWith({
+    String? id,
+    String? title,
+    double? amount,
+    DateTime? date,
+    Category? category,
+  }) {
+    return Expense(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      amount: amount ?? this.amount,
+      date: date ?? this.date,
+      category: category ?? this.category,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'title': title,
+      'amount': amount,
+      'date': date.toIso8601String(),
+      'category': category.name,
+    };
+  }
+
+  static Expense fromMap(Map<String, dynamic> map) {
+    return Expense(
+      id: map['id'] as String,
+      title: map['title'] as String,
+      amount: (map['amount'] as num).toDouble(),
+      date: DateTime.parse(map['date'] as String),
+      category: Category.values.firstWhere(
+        (c) => c.name == map['category'],
+      ),
+    );
   }
 }
 

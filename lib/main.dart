@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:expense_tracker/widgets/expenses.dart';
 import 'package:flutter/services.dart';
+import 'package:expense_tracker/data/expense_repository.dart';
 
 var kColorScheme = ColorScheme.fromSeed(
   seedColor: const Color.fromARGB(255, 96, 59, 181),
@@ -16,6 +17,8 @@ void main() {
   // SystemChrome.setPreferredOrientations([   //locks the screen orientation to portrait
   //   DeviceOrientation.portraitUp,
   // ]).then((fn){
+
+    final repository = ExpenseRepository();
 
     runApp(
       MaterialApp(
@@ -61,7 +64,10 @@ void main() {
         ),
 
         themeMode: ThemeMode.dark, // default to dark mode
-        home: Expenses(),
+        home: Expenses(
+          repository: repository,
+          month: DateTime.now(),
+        ),
       ),
     );
   // });
